@@ -1,0 +1,1 @@
+# Global-Solution-StellarGear-Devops
