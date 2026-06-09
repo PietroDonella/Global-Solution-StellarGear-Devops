@@ -12,7 +12,6 @@ O **Stellar Gear** é uma solução de monitoramento biométrico voltada para o 
 A infraestrutura foi construída na nuvem seguindo a abordagem de *Infrastructure as Code (IaC)* e princípios de *Cloud Native*.
 
 ![Diagrama de Arquitetura](./diagrama-arquitetura.png)
-*(Nota: Certifique-se de fazer o upload da imagem na raiz do repositório)*
 
 ### Componentes:
 * **Cloud Provider:** Microsoft Azure (Brazil South).
