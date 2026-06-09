@@ -6,78 +6,86 @@
 *  **Pietro Donella Salomão** – RM: 561722
 
 ## 🚀 Sobre o Projeto
-O **Stellar Gear** é uma solução de monitoramento biométrico voltada para ambientes extremos e turismo espacial. O sistema processa dados de sinais vitais coletados via IoT (simulados por ESP32), ingerindo-os em uma API .NET de alta performance, integrada a um banco de dados relacional robusto (Oracle XE) e conteinerizada para garantir portabilidade e segurança.
+O **Stellar Gear** é uma solução de monitoramento biométrico voltada para o turismo espacial e ambientes extremos (como mineração e usinas). O sistema coleta sinais vitais via IoT (simulados via Wokwi/ESP32) e os envia para a nuvem. Nossa API .NET atua como o backend de alta performance que ingere, processa e persiste esses dados em um banco de dados relacional Oracle, garantindo a segurança e o monitoramento da saúde dos passageiros.
 
-## 🏗️ Arquitetura da Solução
-A arquitetura foi desenhada seguindo boas práticas de *Cloud Computing* e *DevOps*, utilizando isolamento de rede, containers Docker e persistência de dados.
+## 🏗️ Arquitetura Macro da Solução
+A infraestrutura foi construída na nuvem seguindo a abordagem de *Infrastructure as Code (IaC)* e princípios de *Cloud Native*.
 
 ![Diagrama de Arquitetura](./diagrama-arquitetura.png)
+*(Nota: Certifique-se de fazer o upload da imagem na raiz do repositório)*
 
-### Componentes de Infraestrutura:
+### Componentes:
 * **Cloud Provider:** Microsoft Azure (Brazil South).
-* **Compute:** Virtual Machine (Ubuntu 22.04 LTS).
-* **Orquestração:** Docker Engine com redes isoladas (`stellargear-network`).
-* **Backend:** .NET 10.0 (Segurança focada em Non-Root User).
-* **Banco de Dados:** Oracle XE 21c (Volume Docker persistente).
+* **Virtual Network:** Rede isolada com Network Security Group (NSG) filtrando tráfego.
+* **Compute:** Máquina Virtual Ubuntu 22.04 LTS.
+* **Container Engine:** Docker orquestrando a aplicação e o banco em uma rede *bridge* interna (`stellargear-network`).
+* **Database:** Oracle XE 21c com persistência de dados em *Docker Volume*.
+* **API Backend:** ASP.NET Core 10.0 rodando sob usuário restrito (Non-root).
 
 ---
 
-## 🛠️ Guia de Implementação (Passo a Passo)
+## 🛠️ How-To: Guia de Execução (Do Zero à Nuvem)
 
-Este guia descreve como provisionar e executar o ambiente completo na nuvem.
+Este tutorial descreve como subir o projeto completo, desde a criação da infraestrutura até a execução e testes da API.
 
-### 1. Provisionamento de Infraestrutura
-No Azure Cloud Shell, utilize o script `criacaoGS.sh` para provisionar os recursos:
-1. Criar o Resource Group e VNet.
-2. Definir regras de NSG (Portas: 22, 8080, 1521).
-3. Subir a VM e inicializar o container do Oracle:
-   ```
-   docker run -d --name db_RM_561722 -p 1521:1521 \
-     -v oracle-stellargear-data:/opt/oracle/oradata \
-     --network stellargear-network \
-     -e ORACLE_PASSWORD=Fiap_devops_SG gvenzl/oracle-xe
-   ```
-### 2. Configuração e Migrations
+### Passo 1: Infraestrutura e Banco de Dados (Azure Cloud Shell)
+Provisione os recursos na nuvem e inicie o banco de dados Oracle com um volume persistente para evitar perda de dados.
 
-1. Dentro da Máquina Virtual (acesso via SSH): `Clone este repositório: git clone https://github.com/EnzoVazz/StellarGear.API.git`.
-2. Ajuste o `appsettings.json` para conectar no container interno (db_RM_561722).
-3. Execute a aplicação das migrations através de um container SDK .NET para garantir consistência:
-  ```
-      docker run --rm -it -v $(pwd):/src --network stellargear-network -w /src \
-      [mcr.microsoft.com/dotnet/sdk:10.0](https://mcr.microsoft.com/dotnet/sdk:10.0) \
-      bash -c "dotnet restore && dotnet tool install --global dotnet-ef && export PATH=\"\$PATH:/root/.dotnet/tools\" && dotnet ef database update --project StellarGear.Infrastructure --startup-project StellarGear.API"
-  ```
-### 3. Carga de Dados e Deploy da API
-1. Execute o script DML.sql no banco para popular a massa de dados (80+ registros).
-2. Construa a imagem e suba a API com segurança (usuário `fiapuser`):
-  ```
+    az group create --name rg-stellargear --location brazilsouth
+    az network vnet create --resource-group rg-stellargear --name vnet-stellargear --address-prefix 10.10.0.0/16 --subnet-name subnet-stellargear --subnet-prefix 10.10.1.0/24
+    az network nsg create --resource-group rg-stellargear --name nsg-stellargear
+    az network nsg rule create --resource-group rg-stellargear --nsg-name nsg-stellargear --name allow-ssh --protocol Tcp --priority 1000 --destination-port-range 22 --access Allow
+    az network nsg rule create --resource-group rg-stellargear --nsg-name nsg-stellargear --name allow-8080 --protocol Tcp --priority 1001 --destination-port-range 8080 --access Allow
+    az network nsg rule create --resource-group rg-stellargear --nsg-name nsg-stellargear --name allow-1521 --protocol Tcp --priority 1002 --destination-port-range 1521 --access Allow
+    az network vnet subnet update --resource-group rg-stellargear --vnet-name vnet-stellargear --name subnet-stellargear --network-security-group nsg-stellargear
+
+    # Após criar a VM e instalar o Docker, crie a rede e suba o banco:
+    docker network create stellargear-network
+    docker volume create oracle-stellargear-data
+    docker run -d --name db_RM_561722 -p 1521:1521 -v oracle-stellargear-data:/opt/oracle/oradata --network stellargear-network -e ORACLE_PASSWORD="Fiap_devops_SG" gvenzl/oracle-xe
+
+### Passo 2: Clonagem e Migrations (Terminal da VM)
+Acesse sua Máquina Virtual via SSH. Clone este repositório e aplique a estrutura do banco usando o Entity Framework dentro de um container efêmero (para manter o servidor limpo).
+
+    git clone https://github.com/SEU_GITHUB_AQUI/StellarGear.API.git
+    cd StellarGear.API
+
+    # Configurar appsettings.json apontando para o container interno:
+    # "OracleConnection": "Data Source=db_RM_561722:1521/XEPDB1;User Id=system;Password=Fiap_devops_SG;"
+
+    docker run --rm -it -v $(pwd):/src --network stellargear-network -w /src mcr.microsoft.com/dotnet/sdk:10.0 bash -c "dotnet restore && dotnet tool install --global dotnet-ef && export PATH=\"\$PATH:/root/.dotnet/tools\" && dotnet ef database update --project StellarGear.Infrastructure --startup-project StellarGear.API"
+
+### Passo 3: Deploy da Aplicação
+Faça o build da imagem Docker utilizando nosso *Dockerfile multi-stage* e execute o container da API.
+
     docker build -t stellargear-api-image .
     docker run -d --name api_RM_561722 -p 8080:8080 --network stellargear-network stellargear-api-image
-  ```
 
 ---
 
-### 🔗 Documentação da API (CRUD)
-A API expõe os seguintes endpoints:
-*  `GET /api/Passageiro`: Lista todos os passageiros.
-*  `POST /api/Passageiro`: Cadastra um novo passageiro.
-*  `PUT /api/Passageiro/{id}`: Atualiza dados de um passageiro.
-*  `DELETE /api/Passageiro/{id}`: Remove um passageiro.
-Exemplo de Payload (POST):
-```
-{
-  "nome": "Beatriz Viajante",
-  "cpf": "222.222.222-22",
-  "idade": 28,
-  "statusMedico": "EM AVALIACAO"
-}
-```
+## 🔗 Endpoints e Testes do CRUD
+Após a API estar em execução, você pode testar o CRUD completo enviando requisições HTTP para o IP Público da sua VM na porta `8080` (ex: `http://IP_DA_VM:8080/api/Passageiro`).
+
+* **GET `/api/Passageiro`**: Retorna a lista de todos os passageiros cadastrados.
+* **POST `/api/Passageiro`**: Cria um novo passageiro.
+* **PUT `/api/Passageiro/{id}`**: Atualiza informações (como o status médico) de um passageiro.
+* **DELETE `/api/Passageiro/{id}`**: Remove um passageiro do sistema.
+
+**Exemplo de Payload (POST - Cadastro de Passageiro):**
+
+    {
+      "nome": "Aron Turista",
+      "cpf": "111.111.111-11",
+      "idade": 34,
+      "statusMedico": "APTO"
+    }
 
 ---
 
-###🛡️ DevOps & Security Highlights
-Para atender aos critérios rigorosos da Global Solution:
-*  **Princípio do Menor Privilégio**: A API roda sob o usuário `fiapuser` (não-root), mitigando riscos de escalação de privilégios.
-*  **Persistência de Dados**: Oracle Database configurado com Docker Volume, garantindo que os dados não sejam perdidos.
-*  **Infraestrutura como Código**: Automação total via scripts Bash.
-*  **Dockerfile Multi-stage**: Imagem otimizada para segurança e performance.
+## 🛡️ DevOps & Critérios de Avaliação Atendidos
+Esta entrega foi arquitetada para demonstrar pleno domínio técnico em práticas de DevOps:
+
+1. **Princípio do Menor Privilégio (Segurança):** O Dockerfile foi construído criando e utilizando um usuário não-root (`fiapuser`). Se o container da API for comprometido, o invasor não terá privilégios administrativos no sistema operacional.
+2. **Persistência de Dados (Resiliência):** O Oracle Database está atrelado a um `Docker Volume` dedicado. Reiniciar ou recriar o container do banco não causará perda das leituras biométricas armazenadas.
+3. **Isolamento de Rede (Networking):** O banco de dados e a API comunicam-se de forma segura através da rede bridge isolada `stellargear-network`.
+4. **Otimização de Imagem (Multi-stage Build):** O Dockerfile separa as dependências de compilação (SDK) do ambiente de execução (Runtime), gerando uma imagem de produção extremamente leve e rápida.
